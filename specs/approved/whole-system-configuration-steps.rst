@@ -4,85 +4,151 @@
 
  http://creativecommons.org/licenses/by/3.0/legalcode
 
-======================================================
-System configuration within whole clean or deploy step
-======================================================
+===================================================================
+Efficient and accelerated single-step system hardware configuration
+===================================================================
 
 https://storyboard.openstack.org/#!/story/2003594
 
 Ironic's popularity and the number of ironic deployments, both integrated
-OpenStack and stand-alone, is accelerating. Alongside that, the number of bare
+OpenStack and stand-alone, continue to grow. Alongside that, the number of bare
 metal systems managed by each deployment is increasing. Those trends have led
 operators to demand that improvements be made to the operational management of
-hardware provisioning -- configuration of a bare metal system's BIOS settings,
-RAID, boot mode, network ports, and more. Solutions must reduce operational
-costs and the time required to fulfill a tenant's request for a newly deployed
-and activated bare metal system.
+hardware system configuration -- BIOS settings, RAID, boot mode, network ports,
+inventory, and more. Solutions must reduce operational costs and the time
+required to fulfill a tenant's request for a newly deployed and activated
+bare metal system.
+
+Use cases which would benefit from this proposal include:
+
+* Correct, consistent, and rapid hardware configuration during deployment of
+  fleets of bare metal systems with similar hardware capabilities
+* Production environments in which physical systems are repurposed for
+  workloads that require different configurations and fast turnaround is at a
+  premium
+* Inventory of individual system configurations
 
 To achieve that, prospective solutions should offer:
 
-* Creation of bare metal system configuration molds from common or "golden"
-  systems
-* Management of configuration molds stored at designated storage location
-* Application of a stored configuration mold to a bare metal system
-* Getting system's resulting configuration after changes applied
-* Accelerate hardware provisioning by reducing the amount of time, often
-  requiring fewer reboots, which is dependent on system and ironic hardware
+* Creation of bare metal system configurations from common or "golden" systems
+* Management of configurations stored at a designated storage location
+* Application of a stored configuration to a bare metal system
+* Acquisiton of a system's resulting entire configuration following application
+  of a complete or partial configuration
+* Acceleration of hardware configuration by reducing the amount of time, often
+  via fewer required reboots, which is dependent on system and ironic hardware
   type support
 
-
-This specification proposes a generally applicable solution as new clean and
-deploy steps that each vendor hardware type can implement according to its
-capabilities.
+This specification proposes a generally applicable solution comprised of new
+cleaning and deploy steps which process system configurations. Each hardware
+type may implement it according to its and its system's capabilities.
 
 
 Problem description
 ===================
 
-When there are dozens of servers that need the same configuration, it is still
-a repetitive task to configure them all. Use cases to benefit from this
-include:
+A large number of systems with identical or similar hardware arrives. The user
+wants all of their hardware configured the same.
 
-* Consistent, rapid, and correct configuration of fleets of bare metal systems
-  with similar hardware capabilities during deployment
-* Production environments in which physical servers are repurposed for
-  workloads that require different configurations and fast turnaround is at
-  a premium
-* Getting inventory of system after changes are applied
+* In ironic, that can be a tedious, error-prone task.
+* Ironic is not capable of configuring all of the hardware subsystems for which
+  vendors offer configurability.
+* Applying a configuration can take a great deal of time, often requiring
+  multiple reboots.
 
+The same challenges apply when different workflows are run on the same system,
+each needing a different hardware configuration.
 
 Proposed change
 ===============
 
-This proposes adding new clean and deploy steps to configure a system as a
-single step and reuse configuration from already configured system with similar
-capabilities. This is proposing alternative, not replacement to currently
-existing granular configuration steps like RAID and BIOS configuration. More on
-how this compares to currently available functionality in Ironic is described
-in section `Alternatives`_.
-Overview is described at the beginning of section `Solution`_.
-A step to get current configuration from a system and store it in
-configuration mold is described in `Export configuration`_ section.
-A step to apply already stored configuration mold to a system is described in
-`Import configuration`_ section.
-A step that combines both operations into single step is described in section
-`Import and Export configuration`_.
-The data format that is used for configuration molds is described in section
-`Format of configuration data`_.
-How Ironic and its users interact with configuration molds is described in
-section `Storage of configuration data`_.
+Introduction
+------------
+
+The following concept is used in this specification:
+
+**configuration mold**
+    A document which expresses the current or desired configuraton of a
+    hardware system. It also offers an inventory of a system's hardware
+    configuration.
+
+This specification proposes to:
+
+* Add new, optional cleaning [1]_ and deploy [2]_ steps which, in a single
+  step, can completely configure a system's hardware. They can apply the saved
+  configuration of a system with sufficiently similar hardware capabilities.
+  Steps which obtain and persistently store a system's configuration are also
+  proposed. They will be defined by the driver management hardware interface,
+  ``class ManagementInterface`` in ``.../ironic/drivers/base.py``.
+
+  * ``export_configuration`` --
+        obtain a system's hardware configuration and persistently store it as a
+        *configuration mold* so it can be used to configure other, sufficiently
+        capable systems and as an inventory. More details are available in
+        `Export configuration`_.
+  * ``import_configuration`` --
+        apply the hardware configuration described by an existing, persistently
+        stored *configuration mold* to a sufficently capable system. More
+        details are available in `Import configuration`_.
+  * ``import_export_configuration`` --
+        import and then export the hardware configuration of the same system as
+        a single, atomic step from the perspective of ironic's cleaning and
+        deployment mechanisms. This can further reduce the time required to
+        provision a system than a sequence of separate import and export steps.
+        More details are available in `Import and export configuration`_.
+
+* Define the data format of the vendor-independent content of a *configuraton
+  mold*. It contains a section for each hardware subsystem it supports, RAID and
+  BIOS. The desired configuration of a subsystem for which ironic has been
+  offering configuration support, again RAID and BIOS, is expressed as much as
+  possible in ironic terms.
+
+  To support hardware configuration beyond what ironic defines, but which
+  vendors, systems, and their hardware types could offer in a system-specific
+  manner, a third section, OEM, is proposed. The OEM section can also be used
+  to specify configuration ironic already supports. The content of the OEM
+  section is specific to the system and its hardware type.
+
+  More details, along with an example, are in section
+  `Format of configuration data`_.
+
+* Describe the persistent storage of *configuration molds* for both integrated
+  OpenStack and stand-alone ironic environments and how ironic and its users
+  interact with them. See `Storage of configuration data`_.
+
+* Declare what is considered a complete implementation for the purposes of this
+  specification. An implementation will be  considered complete if it offers
+  all three (3) pairs of cleaning and deploy steps and supports all of the
+  defined *configuration mold* sections, presently BIOS and RAID. Additionally,
+  persistent storage of *configuration molds* must be supported for both ironic
+  environments, integrated OpenStack and stand-alone.
+
+* Offer an alternative, not a replacement, to ironic's currently available
+  granular configuration steps which operate on a single subsystem: RAID and
+  BIOS. How it compares to ironic's present functionality is described in
+  `Alternatives`_.
+
+* Outline a minimum viable product (MVP) implementation by the ``idrac``
+  hardware type in section `idrac-redfish implementation`_. We aim for it to
+  offer all three (3) pairs of cleaning and deploy steps. In the MVP, only the
+  OEM *configuration mold* section will be supported. Both methods of
+  persistent *configuration mold* storage will be implemented and supported.
+
+  .. note ::
+      However, ironic deployment mechanism limitations may restrict them to be
+      only cleaning steps until those can be addressed.
 
 Goals
 -----
 
-With this specification, we are going to achieve the goals of:
+With this specification, we are going to achieve the following goals:
 
-* Defining an ironic hardware type framework which offers more operationally
-  efficient bare metal hardware provisioning
-* Facilitating a consistent method to accelerate hardware provision bare metal,
-  necessitating fewer reboots, when supported by a hardware system and its
-  ironic hardware type
-* Describing a first, MVP implementation by the ``idrac`` hardware type
+* Define an ironic hardware type framework which offers more operationally
+  efficient bare metal hardware configuration
+* Facilitate a consistent method to accelerate bare metal hardware
+  configuration, necessitating fewer reboots, when supported by a hardware
+  system and its ironic hardware type
+* Describe a first, MVP implementation by the ``idrac`` hardware type
 
 Non-goals
 ---------
@@ -91,75 +157,6 @@ The following are considered outside the scope of this specification:
 
 * Implementation of the approach by all hardware types; it is optional
 * Requiring a hardware type’s implementation be complete; it may be partial
-
-Solution
---------
-
-The solution adds three pairs of new, optional clean [0]_ and deploy [1]_
-steps. They are defined by the management hardware interface,
-``class ManagementInterface``.
-
-* ``export_configuration`` --
-          export a system's configuration and persistently store it as a
-          configuration mold, which can be used to configure other,
-          sufficiently capable systems. More details at
-          `Export configuration`_.
-* ``import_configuration`` --
-          import an existing configuration mold to a sufficiently capable
-          system in order to apply the configuration it describes to the
-          system. More details at `Import configuration`_.
-* ``import_export_configuration`` --
-          import and then export a system's configuration of the same system
-          as a single atomic step from the perspective of ironic's clean and
-          deploy mechanisms. This can further reduce the time required to
-          provision a system than a sequence of separate import and export
-          steps. More details at `Import and export configuration`_.
-
-Vendor independent configuration mold format is defined and example given in
-section `Format of configuration data`_. It contains a section for each
-hardware subsystem it supports. The desired configuration of a subsystem for
-which ironic has been offering configuration support is expressed as much as
-possible in ironic terms. For such subsystems, successful application of a
-configuration mold to an ironic node has the same side effects on the node's
-fields.
-
-This specification presently defines support for the BIOS and RAID subsystems
-ironic currently supports. The configuration of those is expressed in ironic
-terms. As part of applying BIOS and RAID configuration, the BIOS and RAID
-settings are cached.
-
-In the future, configuration mold format can be extended by adding support for
-more subsystems whose configurations can be expressed in a system-independent
-manner. Those could include boot, network, and firmware configuration, among
-others.
-
-To support provisioning beyond what ironic defines, but which systems and their
-hardware types could offer in a system-specific manner, a third section, OEM,
-is proposed. The OEM section can also be used to specify configuration ironic
-already supports. The content of the OEM section is specific to the system and
-its hardware type. Successful application of configuration specified in an OEM
-section has no side effects on the node's fields.
-
-The persistent storage of configuration molds is defined for both integrated
-OpenStack and stand-alone ironic environments described in section
-`Storage of configuration data`_.
-
-For the purposes of this specification, an implementation is considered
-complete if it offers all three pairs of clean and deploy steps and supports
-all of the defined configuration mold sections, presently BIOS, RAID.
-Additionally, persistent storage of configuration molds must be supported
-for both ironic environments, integrated OpenStack and stand-alone.
-
-This also defines an MVP implementation by the ``idrac`` hardware type in
-section `idrac-redfish implementation`_. We aim for it to offer all three pairs
-of clean and deploy steps. In MVP only the OEM configuration mold section is
-supported. Both methods of persistent configuration mold storage are
-implemented and supported.
-
-.. note ::
-  However, ironic deploy mechanism limitations may restrict them to be only
-  clean steps until those can be addressed.
-
 
 Export configuration
 ~~~~~~~~~~~~~~~~~~~~
@@ -361,10 +358,10 @@ consists of 3 sections:
 
 * bios – ``reset`` to indicate if reset is necessary before applying settings
   indicated in the list of BIOS attribute key-value pairs inside ``settings``
-  section as in Apply BIOS configuration step [2]_. If ``reset`` is false, then
+  section as in Apply BIOS configuration step [3]_. If ``reset`` is false, then
   settings that are not included in ``settings`` sections are left unchanged.
 * raid – as in RAID create configuration step with key-value pair settings and
-  ``target_raid_config`` property [3]_
+  ``target_raid_config`` property [4]_
 * oem – driver specific section with everything else that does not fit into
   bios and raid sections together with interface name that can handle this
   data. The interface name can be used to distinguish for which hardware type
@@ -525,7 +522,7 @@ idrac-redfish implementation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 For iDRAC to implement these proposed steps it will use Server Configuration
-Profile (SCP) [4]_ that allows to export existing configuration server and
+Profile (SCP) [5]_ that allows to export existing configuration server and
 import the same configuration file to another server. Settings for different
 sub-systems such as BIOS, RAID, NIC are included in the configuration file.
 
@@ -730,16 +727,15 @@ Documentation Impact
 
 * New page created under Administrator's Guide to describe new clean and deploy
   steps
-* Node cleaning documentation [5]_ is updated to describe new clean steps under
+* Node cleaning documentation [6]_ is updated to describe new clean steps under
   Management interface for idrac-redfish
 
 
 References
 ==========
-.. [0] https://docs.openstack.org/ironic/latest/admin/cleaning.html#cleaning-steps
-.. [1] https://docs.openstack.org/ironic/latest/admin/node-deployment.html#node-deployment-deploy-steps
-.. [2] https://docs.openstack.org/ironic/latest/admin/bios.html#apply-bios-configuration
-.. [3] https://opendev.org/openstack/ironic/src/branch/master/ironic/drivers/raid_config_schema.json
-.. [4] https://downloads.dell.com/solutions/dell-management-solution-resources/RESTfulSerConfig-using-iDRAC-REST%20API(DTC%20copy).pdf
-.. [5] https://docs.openstack.org/ironic/latest/admin/cleaning.html
-
+.. [1] https://docs.openstack.org/ironic/latest/admin/cleaning.html#cleaning-steps
+.. [2] https://docs.openstack.org/ironic/latest/admin/node-deployment.html#node-deployment-deploy-steps
+.. [3] https://docs.openstack.org/ironic/latest/admin/bios.html#apply-bios-configuration
+.. [4] https://opendev.org/openstack/ironic/src/branch/master/ironic/drivers/raid_config_schema.json
+.. [5] https://downloads.dell.com/manuals/all-products/esuprt_solutions_int/esuprt_solutions_int_solutions_resources/dell-management-solution-resources_white-papers15_en-us.pdf
+.. [6] https://docs.openstack.org/ironic/latest/admin/cleaning.html
